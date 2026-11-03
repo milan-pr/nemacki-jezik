@@ -13,7 +13,11 @@
         <h1>🇩🇪 Učenje nemačkog</h1>
         <p>Aplikacija za učenje nemačkog jezika</p>
       </div>
-      <button id="homeBtn" class="home-btn hidden" onclick="goHome()">🏠 Početak</button>
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <span id="userDisplay" class="user-name-display hidden"></span>
+        <button id="themeBtn" class="theme-toggle" onclick="toggleTheme()" title="Tamni/svetli režim">🌙</button>
+        <button id="homeBtn" class="home-btn hidden" onclick="goHome()">🏠 Početak</button>
+      </div>
     </div>
   </header>
 
