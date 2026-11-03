@@ -527,3 +527,144 @@ body {
 .mb-2 { margin-bottom: 1rem; }
 .mt-1 { margin-top: 0.5rem; }
 .mt-2 { margin-top: 1rem; }
+
+/* ===== DARK MODE ===== */
+.dark {
+  --bg: #1a202c;
+  --card-bg: #2d3748;
+  --primary: #63b3ed;
+  --primary-dark: #4299e1;
+  --accent: #68d391;
+  --accent-light: #276749;
+  --text: #e2e8f0;
+  --text-light: #a0aec0;
+  --border: #4a5568;
+  --danger: #fc8181;
+  --shadow: 0 4px 6px -1px rgba(0,0,0,0.3), 0 2px 4px -1px rgba(0,0,0,0.2);
+}
+
+.dark .data-table tbody tr:nth-child(even) { background: #364152; }
+.dark .dialog-line.a { background: #2c3e5a; }
+.dark .dialog-line.b { background: #2a4a3a; }
+.dark .quiz-option.correct { background: #22543d; color: #c6f6d5; }
+.dark .quiz-option.wrong { background: #742a2a; color: #fed7d7; }
+.dark .flashcard.flipped { background: #276749; border-color: #68d391; }
+
+/* ===== USER INPUT ===== */
+.user-input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.user-input:focus { border-color: var(--primary); }
+
+/* ===== USER DISPLAY IN HEADER ===== */
+.user-name-display {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.15);
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== THEME TOGGLE ===== */
+.theme-toggle {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: white;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { background: rgba(255,255,255,0.3); }
+
+/* ===== USER LIST ===== */
+.user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.user-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card-bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  gap: 0.5rem;
+}
+.user-item:hover { border-color: var(--primary); transform: translateY(-1px); }
+.user-item.active { border-color: var(--accent); background: var(--accent-light); }
+.dark .user-item.active { background: #276749; }
+.user-item-info { flex: 1; min-width: 0; }
+.user-item-name { font-weight: 700; font-size: 1rem; }
+.user-item-meta { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
+
+/* ===== LEADERBOARD ===== */
+.leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--card-bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+.leaderboard-rank { font-size: 1.4rem; width: 2.5rem; text-align: center; flex-shrink: 0; }
+.leaderboard-name { font-weight: 700; flex: 1; min-width: 0; }
+.leaderboard-stats { text-align: right; font-size: 0.85rem; color: var(--text-light); flex-shrink: 0; }
+
+/* ===== HISTORY TABLE ===== */
+.history-table-wrapper { overflow-x: auto; }
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+}
+.history-table thead {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+}
+.history-table th, .history-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.history-table tbody tr:nth-child(even) { background: #f8fafc; }
+.dark .history-table tbody tr:nth-child(even) { background: #364152; }
+.history-table tbody tr:last-child td { border-bottom: none; }
+@media (max-width: 480px) {
+  .history-table th, .history-table td { padding: 0.5rem 0.4rem; font-size: 0.85rem; }
+  .user-name-display { max-width: 90px; font-size: 0.75rem; padding: 0.2rem 0.5rem; }
+}
