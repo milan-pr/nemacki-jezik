@@ -1,3 +1,7 @@
+// ========== Config ==========
+const STORAGE_KEY = "nemacki-app-v2";
+const OLD_STATS_KEY = "nemacki-app-stats-v1";
+
 // ========== State ==========
 let currentLesson = null;
 let flashcardIndex = 0;
@@ -9,68 +13,189 @@ let quizAnswered = false;
 let quizMaxQuestions = 20;
 let isGeneralQuiz = false;
 
-// ========== Storage ==========
-const STATS_KEY = "nemacki-app-stats-v1";
-
-const Stats = {
+// ========== App Storage (users + settings) ==========
+const AppStorage = {
   load() {
     try {
-      return JSON.parse(localStorage.getItem(STATS_KEY) || "{}");
-    } catch {
-      return {};
-    }
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+      // Migrate from old v1 format
+      const old = localStorage.getItem(OLD_STATS_KEY);
+      if (old) {
+        const oldStats = JSON.parse(old);
+        const data = {
+          version: 2,
+          currentUser: "Korisnik",
+          users: {
+            "Korisnik": { stats: oldStats, createdAt: new Date().toISOString() }
+          },
+          settings: { theme: "light" }
+        };
+        this.save(data);
+        localStorage.removeItem(OLD_STATS_KEY);
+        return data;
+      }
+    } catch (e) { console.error("Storage load error:", e); }
+    return null;
   },
   save(data) {
-    localStorage.setItem(STATS_KEY, JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   },
-  add(lessonId, score, total) {
-    const data = this.load();
-    if (!data[lessonId]) data[lessonId] = [];
-    data[lessonId].push({
-      date: new Date().toISOString(),
-      score,
-      total,
-    });
+  getData() {
+    return this.load() || { version: 2, currentUser: null, users: {}, settings: { theme: "light" } };
+  },
+  getCurrentUser() {
+    return this.getData().currentUser;
+  },
+  setCurrentUser(name) {
+    const data = this.getData();
+    data.currentUser = name;
+    if (!data.users[name]) {
+      data.users[name] = { stats: {}, createdAt: new Date().toISOString() };
+    }
     this.save(data);
   },
+  getUserStats(user) {
+    const data = this.getData();
+    const u = user || data.currentUser;
+    return (data.users[u] && data.users[u].stats) || {};
+  },
+  setUserStats(stats, user) {
+    const data = this.getData();
+    const u = user || data.currentUser;
+    if (!data.users[u]) data.users[u] = { stats: {}, createdAt: new Date().toISOString() };
+    data.users[u].stats = stats;
+    this.save(data);
+  },
+  getAllUsers() {
+    const data = this.getData();
+    return Object.keys(data.users).map(name => ({ name, ...data.users[name] }));
+  },
+  deleteUser(name) {
+    const data = this.getData();
+    delete data.users[name];
+    if (data.currentUser === name) data.currentUser = null;
+    this.save(data);
+  },
+  getSettings() {
+    return this.getData().settings || { theme: "light" };
+  },
+  setSettings(settings) {
+    const data = this.getData();
+    data.settings = { ...data.settings, ...settings };
+    this.save(data);
+  }
+};
+
+// ========== Stats (per-user) ==========
+const Stats = {
+  add(lessonId, score, total) {
+    const stats = AppStorage.getUserStats();
+    if (!stats[lessonId]) stats[lessonId] = [];
+    stats[lessonId].push({ date: new Date().toISOString(), score, total });
+    AppStorage.setUserStats(stats);
+  },
   getLessonStats(lessonId) {
-    const arr = this.load()[lessonId] || [];
+    const arr = AppStorage.getUserStats()[lessonId] || [];
     if (!arr.length) return null;
     const totalPlayed = arr.length;
-    const avg =
-      arr.reduce((s, r) => s + r.score / r.total, 0) / arr.length;
+    const avg = arr.reduce((s, r) => s + r.score / r.total, 0) / arr.length;
     const best = Math.max(...arr.map((r) => r.score / r.total));
     const last = arr[arr.length - 1];
     return { totalPlayed, avg, best, last };
   },
   getAllStats() {
-    const data = this.load();
-    let totalQuizzes = 0;
-    let totalScore = 0;
-    let totalQuestions = 0;
-    Object.values(data).forEach((arr) => {
+    const stats = AppStorage.getUserStats();
+    let totalQuizzes = 0, totalScore = 0, totalQuestions = 0;
+    Object.values(stats).forEach((arr) => {
       arr.forEach((r) => {
         totalQuizzes++;
         totalScore += r.score;
         totalQuestions += r.total;
       });
     });
-    return {
-      totalQuizzes,
-      totalScore,
-      totalQuestions,
-      avgPercent: totalQuestions ? totalScore / totalQuestions : 0,
-    };
+    return { totalQuizzes, totalScore, totalQuestions, avgPercent: totalQuestions ? totalScore / totalQuestions : 0 };
+  },
+  getRecentHistory(limit = 20) {
+    const stats = AppStorage.getUserStats();
+    const all = [];
+    Object.entries(stats).forEach(([lessonId, arr]) => {
+      arr.forEach(r => {
+        const lesson = APP_DATA.lessons.find(l => l.id === lessonId);
+        all.push({
+          lessonId,
+          lessonTitle: lesson ? lesson.title : (lessonId === "general" ? "🎯 Generalni kviz" : lessonId),
+          date: r.date,
+          score: r.score,
+          total: r.total,
+          percent: Math.round((r.score / r.total) * 100)
+        });
+      });
+    });
+    return all.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, limit);
   },
   clear() {
-    localStorage.removeItem(STATS_KEY);
-  },
+    AppStorage.setUserStats({});
+  }
 };
+
+function computeUserSummary(userName) {
+  const stats = AppStorage.getUserStats(userName);
+  let totalQuizzes = 0, totalScore = 0, totalQuestions = 0;
+  Object.values(stats).forEach(arr => {
+    arr.forEach(r => {
+      totalQuizzes++;
+      totalScore += r.score;
+      totalQuestions += r.total;
+    });
+  });
+  return { totalQuizzes, totalScore, totalQuestions, avgPercent: totalQuestions ? totalScore / totalQuestions : 0 };
+}
+
+// ========== Theme ==========
+function applyTheme() {
+  const settings = AppStorage.getSettings();
+  const btn = document.getElementById("themeBtn");
+  if (settings.theme === "dark") {
+    document.documentElement.classList.add("dark");
+    if (btn) btn.textContent = "☀️";
+  } else {
+    document.documentElement.classList.remove("dark");
+    if (btn) btn.textContent = "🌙";
+  }
+}
+
+function toggleTheme() {
+  const settings = AppStorage.getSettings();
+  const newTheme = settings.theme === "dark" ? "light" : "dark";
+  AppStorage.setSettings({ theme: newTheme });
+  applyTheme();
+}
 
 // ========== Init ==========
 document.addEventListener("DOMContentLoaded", () => {
-  goHome();
+  applyTheme();
+  updateUserDisplay();
+  const user = AppStorage.getCurrentUser();
+  if (!user) {
+    renderUserSetup();
+  } else {
+    goHome();
+  }
 });
+
+function updateUserDisplay() {
+  const user = AppStorage.getCurrentUser();
+  const el = document.getElementById("userDisplay");
+  if (el) {
+    if (user) {
+      el.textContent = "👤 " + user;
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
+  }
+}
 
 function goHome() {
   currentLesson = null;
@@ -144,6 +269,10 @@ function renderMenu() {
         <div class="stat-item"><div class="stat-num">${stats.totalQuizzes}</div><div class="stat-label">Kvizova</div></div>
         <div class="stat-item"><div class="stat-num">${stats.totalQuestions}</div><div class="stat-label">Pitanja</div></div>
         <div class="stat-item"><div class="stat-num">${Math.round((stats.avgPercent || 0) * 100)}%</div><div class="stat-label">Tačnost</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--border);">
+        <span style="font-size:0.85rem;color:var(--text-light);">👤 <strong>${escapeHtml(AppStorage.getCurrentUser() || "")}</strong></span>
+        <button class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.6rem;" onclick="renderSwitchUser()">Promeni korisnika</button>
       </div>
       <button class="btn btn-outline btn-block mt-1" onclick="renderStats()">📊 Detaljna statistika</button>
     </div>
@@ -629,11 +758,259 @@ function renderStats() {
   html += `</div>`;
   html += `
     <div class="btn-group" style="justify-content:center;margin-top:1.5rem;">
+      <button class="btn btn-primary" onclick="renderQuizHistory()">📜 Istorija</button>
+      <button class="btn btn-primary" onclick="renderLeaderboard()">🏆 Rang lista</button>
+      <button class="btn btn-outline" onclick="exportData()">💾 Izvezi</button>
+      <button class="btn btn-outline" onclick="triggerImport()">📥 Uvezi</button>
+    </div>
+    <div class="btn-group" style="justify-content:center;margin-top:0.5rem;">
       <button class="btn btn-danger" onclick="if(confirm('Sigurno želiš da obrišeš svu statistiku?')){Stats.clear();goHome();}">🗑️ Obriši statistiku</button>
       <button class="btn btn-outline" onclick="goHome()">🏠 Nazad</button>
     </div>
   `;
   app.innerHTML = html;
+}
+
+// ========== User Management UI ==========
+function renderUserSetup() {
+  const app = getApp();
+  app.innerHTML = `
+    <div class="text-center fade-in" style="padding:2rem 1rem;">
+      <div style="font-size:3rem;">👋</div>
+      <h2 style="margin:1rem 0;">Dobrodošao!</h2>
+      <p style="color:var(--text-light);margin-bottom:1.5rem;">
+        Unesi svoje ime da bismo mogli da pratimo tvoje rezultate.
+      </p>
+      <div style="max-width:320px;margin:0 auto;">
+        <input type="text" id="usernameInput" class="user-input" placeholder="Tvoje ime..." maxlength="20" autocomplete="off" onkeydown="if(event.key==='Enter')saveUsername()">
+        <button class="btn btn-primary btn-block mt-1" onclick="saveUsername()">✅ Počni učenje</button>
+      </div>
+    </div>
+  `;
+  setTimeout(() => document.getElementById("usernameInput")?.focus(), 100);
+}
+
+function saveUsername() {
+  const input = document.getElementById("usernameInput");
+  const name = (input?.value || "").trim();
+  if (!name) { alert("Unesi svoje ime."); return; }
+  AppStorage.setCurrentUser(name);
+  updateUserDisplay();
+  goHome();
+}
+
+function renderSwitchUser() {
+  document.getElementById("homeBtn").classList.remove("hidden");
+  const app = getApp();
+  const users = AppStorage.getAllUsers();
+  let html = `
+    <div class="lesson-header">
+      <span style="font-size:1.8rem;">👤</span>
+      <div class="lesson-title">Korisnici</div>
+    </div>
+    <div class="fade-in" style="padding:1rem;">
+  `;
+
+  if (users.length > 0) {
+    html += `<div class="user-list">`;
+    for (const u of users) {
+      const summary = computeUserSummary(u.name);
+      const isActive = u.name === AppStorage.getCurrentUser();
+      html += `
+        <div class="user-item ${isActive ? 'active' : ''}" onclick="switchToUser('${escapeJs(u.name)}')">
+          <div class="user-item-info">
+            <div class="user-item-name">${escapeHtml(u.name)} ${isActive ? '<span style="font-size:0.75rem;color:var(--accent);">(aktivan)</span>' : ''}</div>
+            <div class="user-item-meta">${summary.totalQuizzes} kvizova · ${Math.round((summary.avgPercent||0)*100)}% tačnost</div>
+          </div>
+          <button class="btn btn-danger" style="font-size:0.75rem;padding:0.3rem 0.6rem;" onclick="event.stopPropagation();deleteUserConfirm('${escapeJs(u.name)}')">🗑️</button>
+        </div>
+      `;
+    }
+    html += `</div>`;
+  }
+
+  html += `
+    <div style="margin-top:1.5rem;text-align:center;">
+      <p style="color:var(--text-light);margin-bottom:0.75rem;">Ili kreiraj novog korisnika:</p>
+      <div style="max-width:320px;margin:0 auto;display:flex;gap:0.5rem;">
+        <input type="text" id="newUsername" class="user-input" placeholder="Novo ime..." maxlength="20" autocomplete="off" onkeydown="if(event.key==='Enter')addNewUser()">
+        <button class="btn btn-accent" onclick="addNewUser()">➕ Dodaj</button>
+      </div>
+    </div>
+    <div class="btn-group" style="justify-content:center;margin-top:1.5rem;">
+      <button class="btn btn-outline" onclick="goHome()">🏠 Nazad</button>
+    </div>
+    </div>
+  `;
+  app.innerHTML = html;
+}
+
+function switchToUser(name) {
+  AppStorage.setCurrentUser(name);
+  updateUserDisplay();
+  goHome();
+}
+
+function addNewUser() {
+  const input = document.getElementById("newUsername");
+  const name = (input?.value || "").trim();
+  if (!name) { alert("Unesi ime."); return; }
+  const users = AppStorage.getAllUsers();
+  if (users.find(u => u.name.toLowerCase() === name.toLowerCase())) {
+    alert("Korisnik sa tim imenom već postoji.");
+    return;
+  }
+  AppStorage.setCurrentUser(name);
+  updateUserDisplay();
+  goHome();
+}
+
+function deleteUserConfirm(name) {
+  if (!confirm(`Sigurno želiš da obrišeš korisnika "${name}" i sve njegove rezultate?`)) return;
+  const wasCurrent = AppStorage.getCurrentUser() === name;
+  AppStorage.deleteUser(name);
+  if (wasCurrent) {
+    const remaining = AppStorage.getAllUsers();
+    if (remaining.length > 0) {
+      AppStorage.setCurrentUser(remaining[0].name);
+      updateUserDisplay();
+      goHome();
+    } else {
+      updateUserDisplay();
+      renderUserSetup();
+    }
+  } else {
+    renderSwitchUser();
+  }
+}
+
+// ========== Leaderboard ==========
+function renderLeaderboard() {
+  document.getElementById("homeBtn").classList.remove("hidden");
+  const app = getApp();
+  const users = AppStorage.getAllUsers()
+    .map(u => ({ ...u, summary: computeUserSummary(u.name) }))
+    .filter(u => u.summary.totalQuizzes > 0)
+    .sort((a, b) => b.summary.avgPercent - a.summary.avgPercent);
+
+  let html = `
+    <div class="lesson-header">
+      <span style="font-size:1.8rem;">🏆</span>
+      <div class="lesson-title">Rang lista</div>
+    </div>
+    <div class="fade-in" style="padding:1rem;">
+  `;
+
+  if (users.length === 0) {
+    html += `<div class="text-center" style="padding:2rem;"><div style="font-size:2.5rem;">🏆</div><p>Još nema odigranih kvizova.<br>Budi prvi!</p></div>`;
+  } else {
+    html += `<div class="leaderboard">`;
+    users.forEach((u, i) => {
+      const medals = ["🥇", "🥈", "🥉"];
+      const rank = i < 3 ? medals[i] : (i + 1) + ".";
+      html += `
+        <div class="leaderboard-row">
+          <div class="leaderboard-rank">${rank}</div>
+          <div class="leaderboard-name">${escapeHtml(u.name)}</div>
+          <div class="leaderboard-stats">
+            <div>${u.summary.totalQuizzes} kvizova</div>
+            <div style="font-weight:700;color:var(--primary);">${Math.round((u.summary.avgPercent||0)*100)}%</div>
+          </div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  html += `
+    <div class="btn-group" style="justify-content:center;margin-top:1.5rem;">
+      <button class="btn btn-outline" onclick="renderStats()">📊 Statistika</button>
+      <button class="btn btn-outline" onclick="goHome()">🏠 Početak</button>
+    </div>
+    </div>
+  `;
+  app.innerHTML = html;
+}
+
+// ========== Quiz History ==========
+function renderQuizHistory() {
+  document.getElementById("homeBtn").classList.remove("hidden");
+  const app = getApp();
+  const history = Stats.getRecentHistory(30);
+
+  let html = `
+    <div class="lesson-header">
+      <span style="font-size:1.8rem;">📜</span>
+      <div class="lesson-title">Istorija kvizova</div>
+    </div>
+    <div class="fade-in" style="padding:1rem;">
+  `;
+
+  if (history.length === 0) {
+    html += `<div class="text-center" style="padding:2rem;"><div style="font-size:2.5rem;">📜</div><p>Još nema odigranih kvizova.</p></div>`;
+  } else {
+    html += `<div class="history-table-wrapper"><table class="history-table"><thead><tr><th>Datum</th><th>Lekcija</th><th>Rezultat</th><th>Tačnost</th></tr></thead><tbody>`;
+    for (const h of history) {
+      const date = new Date(h.date);
+      const dateStr = date.toLocaleDateString("sr-RS") + " " + date.toLocaleTimeString("sr-RS", {hour:"2-digit", minute:"2-digit"});
+      html += `
+        <tr>
+          <td>${dateStr}</td>
+          <td>${escapeHtml(h.lessonTitle)}</td>
+          <td>${h.score} / ${h.total}</td>
+          <td style="font-weight:700;color:${h.percent >= 80 ? 'var(--accent)' : (h.percent >= 50 ? 'var(--primary)' : 'var(--danger)')};">${h.percent}%</td>
+        </tr>
+      `;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  html += `
+    <div class="btn-group" style="justify-content:center;margin-top:1.5rem;">
+      <button class="btn btn-outline" onclick="renderStats()">📊 Statistika</button>
+      <button class="btn btn-outline" onclick="goHome()">🏠 Početak</button>
+    </div>
+    </div>
+  `;
+  app.innerHTML = html;
+}
+
+// ========== Export / Import ==========
+function exportData() {
+  const data = AppStorage.getData();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `nemacki-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function triggerImport() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!data.version || !data.users) throw new Error("Nevažeći format fajla.");
+        if (confirm("Ovo će ZAMENITI sve trenutne podatke (korisnike, statistiku, podešavanja). Nastavi?")) {
+          AppStorage.save(data);
+          alert("Podaci su uspešno uvezeni! Stranica će se osvežiti.");
+          location.reload();
+        }
+      } catch (err) {
+        alert("Greška pri uvozu: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
 }
 
 // ========== Utilities ==========
